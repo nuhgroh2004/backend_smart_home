@@ -347,3 +347,10 @@ func startAPIServer() {
 	fmt.Println()
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
+
+//Dependencies yang Perlu Diinstall
+//Dependencies yang Perlu Diinstall:
+//go get firebase.google.com/go/v4
+//go get firebase.google.com/go/v4/messaging
+//go get google.golang.org/api/option
+//go get cloud.google.com/go/firestore

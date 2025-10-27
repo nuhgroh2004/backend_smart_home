@@ -20,6 +20,7 @@ type Notifikasi struct {
 	Pesan          string `json:"pesan"`
 	TandonPenuh    bool   `json:"tandonPenuh"`
 }
+
 type FCMToken struct {
 	Token       string `json:"token"`
 	DeviceName  string `json:"deviceName"`
@@ -40,70 +41,33 @@ type APIResponse struct {
 }
 
 var (
-	dbClient        *db.Client
-	messagingClient *messaging.Client
-	previousState   Notifikasi
-	apiDBClient     *db.Client
+	notifDBClient        *db.Client
+	notifMessagingClient *messaging.Client
+	notifPreviousState   Notifikasi
+	apiDBClient          *db.Client
 )
 
 const (
-	credentialPath = "serviceAccountKey.json"
-	databaseURL    = "https://smarthome-a3fc2-default-rtdb.firebaseio.com"
-	checkInterval  = 2 * time.Second
+	notifCredentialPath = "serviceAccountKey.json"
+	notifDatabaseURL    = "https://smarthome-a3fc2-default-rtdb.firebaseio.com"
+	notifCheckInterval  = 2 * time.Second
 )
 
-func main() {
-	if len(os.Args) > 1 && os.Args[1] == "api" {
-		startAPIServer()
-	} else {
-		runMonitoringService()
+func RunNotifikasi(ctx context.Context) {
+	if err := initNotifFirebase(ctx); err != nil {
+		log.Printf("❌ Error initializing Firebase for notifikasi: %v", err)
+		return
 	}
-}
-
-func typePrintln(s string, charDelay time.Duration) {
-	for _, r := range s {
-		fmt.Printf("%c", r)
-		time.Sleep(charDelay)
-	}
-	fmt.Println()
-}
-
-func runMonitoringService() {
-	ctx := context.Background()
-	if err := initFirebase(ctx); err != nil {
-		log.Fatalf("❌ Error initializing Firebase: %v", err)
-	}
-
-	lines := []string{
-		"",
-		"======================= Golang 1.24 =======================",
-		"",
-		"Fokuslah pada pengguna, dan semua hal lain akan mengikuti.",
-		"",
-		"server menyala ............................................",
-		"",
-	}
-
-	for _, line := range lines {
-		if line == "" {
-			fmt.Println()
-		} else {
-			typePrintln(line, 40*time.Millisecond)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	if err := loadInitialState(ctx); err != nil {
-		log.Fatalf("❌ Error loading initial state: %v", err)
+	if err := loadNotifInitialState(ctx); err != nil {
+		log.Printf("❌ Error loading initial state: %v", err)
+		return
 	}
 	monitorNotifications(ctx)
 }
 
-func initFirebase(ctx context.Context) error {
-	opt := option.WithCredentialsFile(credentialPath)
-	config := &firebase.Config{
-		DatabaseURL: databaseURL,
-	}
+func initNotifFirebase(ctx context.Context) error {
+	opt := option.WithCredentialsFile(notifCredentialPath)
+	config := &firebase.Config{DatabaseURL: notifDatabaseURL}
 	app, err := firebase.NewApp(ctx, config, opt)
 	if err != nil {
 		return fmt.Errorf("error initializing app: %v", err)
@@ -112,26 +76,26 @@ func initFirebase(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error initializing database: %v", err)
 	}
-	dbClient = client
+	notifDBClient = client
 	msgClient, err := app.Messaging(ctx)
 	if err != nil {
 		return fmt.Errorf("error initializing messaging: %v", err)
 	}
-	messagingClient = msgClient
+	notifMessagingClient = msgClient
 	return nil
 }
 
-func loadInitialState(ctx context.Context) error {
-	ref := dbClient.NewRef("IoTSystem/Notifikasi")
-	if err := ref.Get(ctx, &previousState); err != nil {
+func loadNotifInitialState(ctx context.Context) error {
+	ref := notifDBClient.NewRef("IoTSystem/Notifikasi")
+	if err := ref.Get(ctx, &notifPreviousState); err != nil {
 		return err
 	}
 	return nil
 }
 
-func getCurrentState(ctx context.Context) (Notifikasi, error) {
+func getNotifCurrentState(ctx context.Context) (Notifikasi, error) {
 	var current Notifikasi
-	ref := dbClient.NewRef("IoTSystem/Notifikasi")
+	ref := notifDBClient.NewRef("IoTSystem/Notifikasi")
 	if err := ref.Get(ctx, &current); err != nil {
 		return current, err
 	}
@@ -140,7 +104,7 @@ func getCurrentState(ctx context.Context) (Notifikasi, error) {
 
 func getActiveFCMTokens(ctx context.Context) ([]string, error) {
 	var tokensMap map[string]FCMToken
-	ref := dbClient.NewRef("IoTSystem/FCMTokens")
+	ref := notifDBClient.NewRef("IoTSystem/FCMTokens")
 	if err := ref.Get(ctx, &tokensMap); err != nil {
 		return nil, err
 	}
@@ -184,7 +148,7 @@ func sendNotification(ctx context.Context, title, body, notifType string) error 
 				},
 			}
 		}
-		_, err := messagingClient.Send(ctx, message)
+		_, err := notifMessagingClient.Send(ctx, message)
 		if err != nil {
 			continue
 		}
@@ -197,22 +161,14 @@ func sendNotification(ctx context.Context, title, body, notifType string) error 
 }
 
 func checkAndNotify(ctx context.Context, current Notifikasi) {
-	if current.AsapTerdeteksi != previousState.AsapTerdeteksi && current.AsapTerdeteksi {
-		err := sendNotification(ctx,
-			"Sensor Asap",
-			"Asap terdeteksi berpotensi kebakaran",
-			"asap_terdeteksi",
-		)
+	if current.AsapTerdeteksi != notifPreviousState.AsapTerdeteksi && current.AsapTerdeteksi {
+		err := sendNotification(ctx, "Sensor Asap", "Asap terdeteksi berpotensi kebakaran", "asap_terdeteksi")
 		if err == nil {
 			fmt.Println("Notifikasi sensor asap terkirim (✓)")
 		}
 	}
-	if current.TandonPenuh != previousState.TandonPenuh && current.TandonPenuh {
-		err := sendNotification(ctx,
-			"Tandon Air",
-			"Tandon Air penuh",
-			"tandon_penuh",
-		)
+	if current.TandonPenuh != notifPreviousState.TandonPenuh && current.TandonPenuh {
+		err := sendNotification(ctx, "Tandon Air", "Tandon Air penuh", "tandon_penuh")
 		if err == nil {
 			fmt.Println("Notifikasi tandon air terkirim (✓)")
 		}
@@ -220,28 +176,33 @@ func checkAndNotify(ctx context.Context, current Notifikasi) {
 }
 
 func monitorNotifications(ctx context.Context) {
-	ticker := time.NewTicker(checkInterval)
+	ticker := time.NewTicker(notifCheckInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		currentState, err := getCurrentState(ctx)
-		if err != nil {
-			continue
+	for {
+		select {
+		case <-ticker.C:
+			currentState, err := getNotifCurrentState(ctx)
+			if err != nil {
+				continue
+			}
+			checkAndNotify(ctx, currentState)
+			notifPreviousState = currentState
+		case <-ctx.Done():
+			return
 		}
-		checkAndNotify(ctx, currentState)
-		previousState = currentState
 	}
 }
 
-// ============================================
-// API SERVER FUNCTIONS
-// ============================================
+func StartAPIServer() {
+	if len(os.Args) > 1 && os.Args[1] == "api" {
+		startAPIServer()
+	}
+}
 
 func initAPIFirebase() error {
 	ctx := context.Background()
-	opt := option.WithCredentialsFile(credentialPath)
-	config := &firebase.Config{
-		DatabaseURL: databaseURL,
-	}
+	opt := option.WithCredentialsFile(notifCredentialPath)
+	config := &firebase.Config{DatabaseURL: notifDatabaseURL}
 	app, err := firebase.NewApp(ctx, config, opt)
 	if err != nil {
 		return err
@@ -373,10 +334,3 @@ func startAPIServer() {
 	fmt.Println()
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
-
-//Dependencies yang Perlu Diinstall
-//Dependencies yang Perlu Diinstall:
-//go get firebase.google.com/go/v4
-//go get firebase.google.com/go/v4/messaging
-//go get google.golang.org/api/option
-//go get cloud.google.com/go/firestore

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -18,41 +19,45 @@ type ListrikData struct {
 }
 
 type ElectricityHistory struct {
-	TotalDaya_W     float64   `firestore:"totalDaya_W"`
-	JumlahPembacaan int       `firestore:"jumlahPembacaan"`
-	RataRata_W      float64   `firestore:"rataRata_W"`
-	DayaTerakhir_W  float64   `firestore:"dayaTerakhir_W"`
-	Date            string    `firestore:"date"`
+	TotalDaya_W     float64   `firestore:"totalDaya_W"`     // Total akumulasi daya dalam sehari
+	JumlahPembacaan int       `firestore:"jumlahPembacaan"` // Berapa kali data dibaca/diupdate
+	RataRata_W      float64   `firestore:"rataRata_W"`      // Rata-rata daya
+	DayaTerakhir_W  float64   `firestore:"dayaTerakhir_W"`  // Daya terakhir yang tercatat
+	Date            string    `firestore:"date"`            // Format: 2025-10-27
 	Year            int       `firestore:"year"`
 	Month           int       `firestore:"month"`
 	Day             int       `firestore:"day"`
-	FirstRecordedAt time.Time `firestore:"firstRecordedAt"`
-	LastUpdatedAt   time.Time `firestore:"lastUpdatedAt"`
+	FirstRecordedAt time.Time `firestore:"firstRecordedAt"` // Waktu record pertama hari ini
+	LastUpdatedAt   time.Time `firestore:"lastUpdatedAt"`   // Waktu update terakhir
 }
 
 var (
-	monitoringRealtimeDBClient *db.Client
-	monitoringFirestoreClient  *firestore.Client
+	realtimeDBClient *db.Client
+	firestoreClient  *firestore.Client
 )
 
 const (
-	monitoringServiceAccountPath  = "serviceAccountKey.json"
-	monitoringRealtimeDatabaseURL = "https://smarthome-a3fc2-default-rtdb.firebaseio.com"
-	monitoringCheckInterval       = 10 * time.Second
-	monitoringFirestoreCollection = "electricity_history"
+	serviceAccountPath   = "serviceAccountKey.json"
+	realtimeDatabaseURL  = "https://smarthome-a3fc2-default-rtdb.firebaseio.com"
+	checkIntervalSeconds = 10 * time.Second // Interval pembacaan data
+	firestoreCollection  = "electricity_history"
 )
 
-func RunMonitoringListrik(ctx context.Context) {
-	if err := initMonitoringFirebase(ctx); err != nil {
-		log.Printf("❌ Error initializing Firebase for monitoring: %v", err)
-		return
+func main() {
+	ctx := context.Background()
+	if err := initializeFirebase(ctx); err != nil {
+		log.Fatalf("❌ Error initializing Firebase: %v", err)
 	}
+	defer firestoreClient.Close()
+	printStartupMessage()
 	monitorElectricity(ctx)
 }
 
-func initMonitoringFirebase(ctx context.Context) error {
-	opt := option.WithCredentialsFile(monitoringServiceAccountPath)
-	config := &firebase.Config{DatabaseURL: monitoringRealtimeDatabaseURL}
+func initializeFirebase(ctx context.Context) error {
+	opt := option.WithCredentialsFile(serviceAccountPath)
+	config := &firebase.Config{
+		DatabaseURL: realtimeDatabaseURL,
+	}
 	app, err := firebase.NewApp(ctx, config, opt)
 	if err != nil {
 		return fmt.Errorf("error initializing Firebase app: %v", err)
@@ -61,18 +66,18 @@ func initMonitoringFirebase(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error initializing Realtime Database: %v", err)
 	}
-	monitoringRealtimeDBClient = dbClient
+	realtimeDBClient = dbClient
 	fsClient, err := firestore.NewClient(ctx, "smarthome-a3fc2", opt)
 	if err != nil {
 		return fmt.Errorf("error initializing Firestore: %v", err)
 	}
-	monitoringFirestoreClient = fsClient
+	firestoreClient = fsClient
 	return nil
 }
 
 func getElectricityData(ctx context.Context) (*ListrikData, error) {
 	var data ListrikData
-	ref := monitoringRealtimeDBClient.NewRef("IoTSystem/Listrik")
+	ref := realtimeDBClient.NewRef("IoTSystem/Listrik")
 	if err := ref.Get(ctx, &data); err != nil {
 		return nil, fmt.Errorf("error getting electricity data: %v", err)
 	}
@@ -82,9 +87,9 @@ func getElectricityData(ctx context.Context) (*ListrikData, error) {
 func saveToFirestore(ctx context.Context, data *ListrikData) error {
 	now := time.Now()
 	dateStr := now.Format("2006-01-02")
-	docRef := monitoringFirestoreClient.Collection(monitoringFirestoreCollection).Doc(dateStr)
+	docID := dateStr
+	docRef := firestoreClient.Collection(firestoreCollection).Doc(docID)
 	docSnap, err := docRef.Get(ctx)
-
 	if err != nil {
 		history := ElectricityHistory{
 			TotalDaya_W:     data.DayaSaatIni_W,
@@ -105,7 +110,6 @@ func saveToFirestore(ctx context.Context, data *ListrikData) error {
 		log.Printf("📝 Dokumen baru dibuat untuk tanggal %s", dateStr)
 		return nil
 	}
-
 	if docSnap.Exists() {
 		var existingData ElectricityHistory
 		if err := docSnap.DataTo(&existingData); err != nil {
@@ -127,14 +131,17 @@ func saveToFirestore(ctx context.Context, data *ListrikData) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("unexpected state")
+	return fmt.Errorf("unexpected state: document snapshot exists but not valid")
 }
 
 func monitorElectricity(ctx context.Context) {
-	ticker := time.NewTicker(monitoringCheckInterval)
+	ticker := time.NewTicker(checkIntervalSeconds)
 	defer ticker.Stop()
+	fmt.Printf("🔌 Monitoring listrik dimulai (interval: %v)\n", checkIntervalSeconds)
+	fmt.Println("📊 Data akan disimpan ke Firestore collection:", firestoreCollection)
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Println()
 	recordCount := 0
-
 	for {
 		select {
 		case <-ticker.C:
@@ -149,7 +156,7 @@ func monitorElectricity(ctx context.Context) {
 			}
 			recordCount++
 			dateStr := time.Now().Format("2006-01-02")
-			docRef := monitoringFirestoreClient.Collection(monitoringFirestoreCollection).Doc(dateStr)
+			docRef := firestoreClient.Collection(firestoreCollection).Doc(dateStr)
 			docSnap, err := docRef.Get(ctx)
 			if err == nil && docSnap.Exists() {
 				var currentData ElectricityHistory
@@ -168,7 +175,31 @@ func monitorElectricity(ctx context.Context) {
 					data.DayaSaatIni_W)
 			}
 		case <-ctx.Done():
+			fmt.Println("\n⚠️  Context cancelled, stopping monitoring...")
 			return
 		}
+	}
+}
+
+func printStartupMessage() {
+	lines := []string{
+		"",
+		"==================== Monitoring Listrik ====================",
+		"",
+		"📊 Smart Home Electricity History Logger",
+		"",
+		"✓ Realtime Database: Connected",
+		"✓ Firestore: Connected",
+		fmt.Sprintf("✓ Interval: %v", checkIntervalSeconds),
+		fmt.Sprintf("✓ Collection: %s", firestoreCollection),
+		"",
+		"Server menyala ..........................................",
+		"",
+		strings.Repeat("=", 60),
+		"",
+	}
+	for _, line := range lines {
+		fmt.Println(line)
+		time.Sleep(100 * time.Millisecond)
 	}
 }

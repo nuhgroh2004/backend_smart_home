@@ -60,13 +60,39 @@ func main() {
 	}
 }
 
+func typePrintln(s string, charDelay time.Duration) {
+	for _, r := range s {
+		fmt.Printf("%c", r)
+		time.Sleep(charDelay)
+	}
+	fmt.Println()
+}
+
 func runMonitoringService() {
 	ctx := context.Background()
 	if err := initFirebase(ctx); err != nil {
 		log.Fatalf("❌ Error initializing Firebase: %v", err)
 	}
-	fmt.Println("server menyala ..............")
-	fmt.Println()
+
+	lines := []string{
+		"",
+		"<====================== Golang 1.24 ======================>",
+		"",
+		"Fokuslah pada pengguna, dan semua hal lain akan mengikuti.",
+		"",
+		"server menyala ............................................",
+		"",
+	}
+
+	for _, line := range lines {
+		if line == "" {
+			fmt.Println()
+		} else {
+			typePrintln(line, 40*time.Millisecond)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	if err := loadInitialState(ctx); err != nil {
 		log.Fatalf("❌ Error loading initial state: %v", err)
 	}
@@ -178,7 +204,7 @@ func checkAndNotify(ctx context.Context, current Notifikasi) {
 			"asap_terdeteksi",
 		)
 		if err == nil {
-			fmt.Println("Notifikasi sensor asap terkirim")
+			fmt.Println("Notifikasi sensor asap terkirim (✓)")
 		}
 	}
 	if current.TandonPenuh != previousState.TandonPenuh && current.TandonPenuh {
@@ -188,7 +214,7 @@ func checkAndNotify(ctx context.Context, current Notifikasi) {
 			"tandon_penuh",
 		)
 		if err == nil {
-			fmt.Println("Notifikasi tandon air terkirim")
+			fmt.Println("Notifikasi tandon air terkirim (✓)")
 		}
 	}
 }

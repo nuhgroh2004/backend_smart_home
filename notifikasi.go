@@ -76,7 +76,7 @@ func runMonitoringService() {
 
 	lines := []string{
 		"",
-		"<====================== Golang 1.24 ======================>",
+		"======================= Golang 1.24 =======================",
 		"",
 		"Fokuslah pada pengguna, dan semua hal lain akan mengikuti.",
 		"",

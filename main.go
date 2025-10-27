@@ -14,16 +14,20 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	printStartupMessage()
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		RunNotifikasi(ctx)
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		RunMonitoringListrik(ctx)
 	}()
 
 	sigChan := make(chan os.Signal, 1)

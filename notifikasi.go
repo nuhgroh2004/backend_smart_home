@@ -52,51 +52,22 @@ const (
 	checkInterval  = 2 * time.Second
 )
 
-func main() {
-	if len(os.Args) > 1 && os.Args[1] == "api" {
-		startAPIServer()
-	} else {
-		runMonitoringService()
-	}
-}
-
-func typePrintln(s string, charDelay time.Duration) {
-	for _, r := range s {
-		fmt.Printf("%c", r)
-		time.Sleep(charDelay)
-	}
-	fmt.Println()
-}
-
-func runMonitoringService() {
-	ctx := context.Background()
+func RunNotifikasi(ctx context.Context) {
 	if err := initFirebase(ctx); err != nil {
-		log.Fatalf("❌ Error initializing Firebase: %v", err)
+		log.Printf("❌ Error initializing Firebase for notifikasi: %v", err)
+		return
 	}
-
-	lines := []string{
-		"",
-		"======================= Golang 1.24 =======================",
-		"",
-		"Fokuslah pada pengguna, dan semua hal lain akan mengikuti.",
-		"",
-		"server menyala ............................................",
-		"",
-	}
-
-	for _, line := range lines {
-		if line == "" {
-			fmt.Println()
-		} else {
-			typePrintln(line, 40*time.Millisecond)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
 	if err := loadInitialState(ctx); err != nil {
-		log.Fatalf("❌ Error loading initial state: %v", err)
+		log.Printf("❌ Error loading initial state: %v", err)
+		return
 	}
 	monitorNotifications(ctx)
+}
+
+func StartAPIServer() {
+	if len(os.Args) > 1 && os.Args[1] == "api" {
+		startAPIServer()
+	}
 }
 
 func initFirebase(ctx context.Context) error {
@@ -222,13 +193,18 @@ func checkAndNotify(ctx context.Context, current Notifikasi) {
 func monitorNotifications(ctx context.Context) {
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		currentState, err := getCurrentState(ctx)
-		if err != nil {
-			continue
+	for {
+		select {
+		case <-ticker.C:
+			currentState, err := getCurrentState(ctx)
+			if err != nil {
+				continue
+			}
+			checkAndNotify(ctx, currentState)
+			previousState = currentState
+		case <-ctx.Done():
+			return
 		}
-		checkAndNotify(ctx, currentState)
-		previousState = currentState
 	}
 }
 

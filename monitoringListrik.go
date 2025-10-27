@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -43,13 +42,11 @@ const (
 	firestoreCollection  = "electricity_history"
 )
 
-func main() {
-	ctx := context.Background()
+func RunMonitoringListrik(ctx context.Context) {
 	if err := initializeFirebase(ctx); err != nil {
-		log.Fatalf("❌ Error initializing Firebase: %v", err)
+		log.Printf("❌ Error initializing Firebase for monitoring: %v", err)
+		return
 	}
-	defer firestoreClient.Close()
-	printStartupMessage()
 	monitorElectricity(ctx)
 }
 
@@ -137,10 +134,7 @@ func saveToFirestore(ctx context.Context, data *ListrikData) error {
 func monitorElectricity(ctx context.Context) {
 	ticker := time.NewTicker(checkIntervalSeconds)
 	defer ticker.Stop()
-	fmt.Printf("🔌 Monitoring listrik dimulai (interval: %v)\n", checkIntervalSeconds)
-	fmt.Println("📊 Data akan disimpan ke Firestore collection:", firestoreCollection)
-	fmt.Println(strings.Repeat("=", 70))
-	fmt.Println()
+
 	recordCount := 0
 	for {
 		select {
@@ -175,31 +169,7 @@ func monitorElectricity(ctx context.Context) {
 					data.DayaSaatIni_W)
 			}
 		case <-ctx.Done():
-			fmt.Println("\n⚠️  Context cancelled, stopping monitoring...")
 			return
 		}
-	}
-}
-
-func printStartupMessage() {
-	lines := []string{
-		"",
-		"==================== Monitoring Listrik ====================",
-		"",
-		"📊 Smart Home Electricity History Logger",
-		"",
-		"✓ Realtime Database: Connected",
-		"✓ Firestore: Connected",
-		fmt.Sprintf("✓ Interval: %v", checkIntervalSeconds),
-		fmt.Sprintf("✓ Collection: %s", firestoreCollection),
-		"",
-		"Server menyala ..........................................",
-		"",
-		strings.Repeat("=", 60),
-		"",
-	}
-	for _, line := range lines {
-		fmt.Println(line)
-		time.Sleep(100 * time.Millisecond)
 	}
 }

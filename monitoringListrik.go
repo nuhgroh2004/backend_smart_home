@@ -52,7 +52,7 @@ var (
 const (
 	serviceAccountPath   = "serviceAccountKey.json"
 	realtimeDatabaseURL  = "https://smarthome-a3fc2-default-rtdb.firebaseio.com"
-	checkIntervalSeconds = 10 * time.Second
+	checkIntervalSeconds = 3 * time.Second // Interval pengecekan data listrik ====================================================================================================
 	firestoreCollection  = "electricity_history"
 	monthlyCollection    = "monthly_electricity_history"
 	tarifPerKwh_Rp       = 1352.0

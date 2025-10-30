@@ -30,6 +30,12 @@ func main() {
 		RunMonitoringListrik(ctx)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		RunMonitoringSensorAsap(ctx)
+	}()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
